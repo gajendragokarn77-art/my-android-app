@@ -1,9 +1,9 @@
-name: Build Web to Android APK
+name: Build Android APK
 
 on:
   push:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
+    branches: [ "main" ] # ಅಥವಾ ನಿಮ್ಮ ಬ್ರಾಂಚ್ ಹೆಸರು (ಉದಾ: master)
+  workflow_dispatch: # ಮ್ಯಾನುವಲ್ ಆಗಿ ಬಟನ್ ಕ್ಲಿಕ್ ಮಾಡಿ ರನ್ ಮಾಡಲು
 
 jobs:
   build:
@@ -13,44 +13,20 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Setup Java (JDK 21)
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
+          java-version: '17'
           distribution: 'temurin'
-          java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Initialize Capacitor Project
-        run: |
-          npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "Live Connect" "in.ccsg.liveconnect" --web-dir "www"
-          npx cap add android
-
-      - name: Add Camera & Microphone Permissions to AndroidManifest
-        run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          PERMISSIONS="<uses-permission android:name=\"android.permission.INTERNET\" />\n    <uses-permission android:name=\"android.permission.CAMERA\" />\n    <uses-permission android:name=\"android.permission.RECORD_AUDIO\" />\n    <uses-permission android:name=\"android.permission.MODIFY_AUDIO_SETTINGS\" />\n    <uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\" />"
-          sed -i "/<manifest/a \    $PERMISSIONS" $MANIFEST
-
-      - name: Sync Web Code into Android Project
-        run: npx cap sync android
+      - name: Make Gradlew Executable
+        run: chmod +x ./gradlew
 
       - name: Build Debug APK
-        run: |
-          cd android
-          chmod +x ./gradlew
-          ./gradlew assembleDebug
+        run: ./gradlew assembleDebug
 
-      - name: Upload APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LiveConnect-APK
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
