@@ -1,32 +1,1144 @@
-name: Build Android APK
+<!DOCTYPE html>
+<html lang="kn">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
+  <title>ಲೈವ್ ಸಂಪರ್ಕ ಪೋರ್ಟಲ್</title>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
 
-on:
-  push:
-    branches: [ "main" ] # ಅಥವಾ ನಿಮ್ಮ ಬ್ರಾಂಚ್ ಹೆಸರು (ಉದಾ: master)
-  workflow_dispatch: # ಮ್ಯಾನುವಲ್ ಆಗಿ ಬಟನ್ ಕ್ಲಿಕ್ ಮಾಡಿ ರನ್ ಮಾಡಲು
+  <style>
+    :root {
+      --primary: #800000;
+      --primary-dark: #560000;
+      --accent: #b30000;
+      --court-gold: #c5a059;
+      --green: #2e7d32;
+      --bg: #f4f6f8;
+      --white: #ffffff;
+      --text: #222222;
+      --border: #dcdcdc;
+    }
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Kannada", sans-serif; }
+    html, body { width: 100%; height: 100%; background: var(--bg); color: var(--text); position: fixed; overflow: hidden; }
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    .app-container {
+      width: 100%;
+      max-width: 480px;
+      height: 100%;
+      margin: 0 auto;
+      background: var(--white);
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 0 15px rgba(0,0,0,0.15);
+      position: relative;
+    }
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
+    .screen { display: none; height: 100%; width: 100%; flex-direction: column; overflow: hidden; position: relative; }
+    .screen.active { display: flex; }
 
-      - name: Make Gradlew Executable
-        run: chmod +x ./gradlew
+    /* Header */
+    .app-header {
+      background: var(--primary);
+      color: var(--white);
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 3px solid var(--court-gold);
+      flex-shrink: 0;
+    }
+    .app-header h2 { font-size: 1rem; font-weight: 600; }
+    .status-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #28a745; margin-right: 5px; }
+    .status-dot.offline { background: #9e9e9e; }
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug
+    /* Auth */
+    .auth-box { padding: 24px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; justify-content: center; }
+    .auth-card { border: 1px solid var(--border); border-top: 4px solid var(--accent); padding: 20px; border-radius: 8px; background: #fff; }
+    .auth-card h3 { color: var(--primary); margin-bottom: 16px; font-size: 1.15rem; text-align: center; }
 
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 5px; color: #444; }
+    .form-group input {
+      width: 100%;
+      padding: 11px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 0.95rem;
+      outline: none;
+    }
+    .form-group input:focus { border-color: var(--accent); }
+
+    .btn {
+      width: 100%;
+      background: var(--primary);
+      color: var(--white);
+      border: none;
+      padding: 12px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-top: 6px;
+    }
+
+    /* Tabs */
+    .tab-bar { display: flex; background: #eee; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .tab-btn {
+      flex: 1;
+      padding: 11px;
+      text-align: center;
+      font-size: 0.85rem;
+      font-weight: bold;
+      border: none;
+      background: none;
+      color: #666;
+      cursor: pointer;
+    }
+    .tab-btn.active { color: var(--primary); border-bottom: 3px solid var(--accent); background: #fff; }
+
+    /* Lists */
+    .list-container { flex: 1; overflow-y: auto; padding: 12px; -webkit-overflow-scrolling: touch; }
+    .user-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--primary);
+      padding: 12px 14px;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .user-info h4 { font-size: 0.95rem; color: #222; }
+    .user-info small { font-size: 0.75rem; color: #666; }
+
+    /* Chat View */
+    .chat-top-bar {
+      background: var(--primary);
+      color: #fff;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px solid var(--court-gold);
+      flex-shrink: 0;
+    }
+    .chat-target-info { display: flex; flex-direction: column; }
+    .chat-target-info .name { font-size: 0.92rem; font-weight: 700; }
+    .chat-target-info .status { font-size: 0.7rem; color: #ffcccc; }
+    .call-actions { display: flex; gap: 8px; }
+    .action-icon-btn {
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.4);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .chat-body {
+      flex: 1;
+      height: 0;
+      padding: 12px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      background: #fbf8f8;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .msg {
+      max-width: 80%;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      line-height: 1.35;
+      word-wrap: break-word;
+    }
+    .msg.incoming { align-self: flex-start; background: var(--white); border: 1px solid #e2e2e2; border-left: 3px solid var(--primary); }
+    .msg.outgoing { align-self: flex-end; background: #ffebeb; border: 1px solid #f2c2c2; border-right: 3px solid var(--accent); }
+    .msg .time { font-size: 0.65rem; color: #777; text-align: right; margin-top: 4px; display: block; }
+
+    .chat-input-bar {
+      display: flex;
+      align-items: center;
+      padding: 8px 10px;
+      padding-bottom: max(8px, env(safe-area-inset-bottom));
+      background: #eef0f2;
+      border-top: 2px solid var(--border);
+      gap: 8px;
+      flex-shrink: 0;
+      width: 100%;
+    }
+    .chat-input-bar input {
+      flex: 1;
+      min-width: 0;
+      height: 44px;
+      padding: 0 14px;
+      border: 1px solid #bbb;
+      border-radius: 22px;
+      outline: none;
+      font-size: 16px;
+      background: #fff;
+    }
+    .chat-input-bar button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      height: 44px;
+      padding: 0 18px;
+      border-radius: 22px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    /* Video Overlay */
+    #video-overlay {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: #111;
+      z-index: 1000;
+      flex-direction: column;
+    }
+    #video-overlay.active { display: flex; }
+    #remote-video { width: 100%; height: 100%; object-fit: cover; }
+    #local-video {
+      position: absolute;
+      top: 15px; right: 15px;
+      width: 105px; height: 145px;
+      border: 2px solid #fff;
+      border-radius: 8px;
+      object-fit: cover;
+      background: #222;
+      z-index: 1001;
+    }
+    .call-controls-overlay {
+      position: absolute;
+      bottom: 30px;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      z-index: 1002;
+    }
+    .hangup-btn {
+      background: #d32f2f;
+      color: #fff;
+      border: none;
+      width: 62px; height: 62px;
+      border-radius: 50%;
+      font-size: 1.6rem;
+      cursor: pointer;
+    }
+    .call-status-label {
+      position: absolute;
+      top: 20px; left: 20px;
+      color: #fff;
+      background: rgba(0,0,0,0.65);
+      padding: 6px 14px;
+      border-radius: 15px;
+      font-size: 0.82rem;
+      z-index: 1002;
+    }
+
+    /* Incoming Call Popup */
+    #incoming-modal {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.9);
+      z-index: 2000;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: #fff;
+      padding: 20px;
+      text-align: center;
+    }
+    #incoming-modal.active { display: flex; }
+    .modal-actions { display: flex; gap: 30px; margin-top: 35px; }
+    .circle-btn {
+      width: 68px; height: 68px;
+      border-radius: 50%;
+      border: none;
+      color: #fff;
+      font-size: 1.6rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #proximity-blackout {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: #000000 !important;
+      z-index: 99999;
+      pointer-events: all;
+    }
+    #proximity-blackout.blackout-on { display: block !important; }
+  </style>
+</head>
+<body>
+
+<div class="app-container" id="app-root">
+
+  <!-- 1. LOGIN SCREEN -->
+  <div id="screen-login" class="screen active">
+    <div class="app-header">
+      <h2>ನೇರ ಸಂಪರ್ಕ ಪೋರ್ಟಲ್</h2>
+      <span style="font-size:0.75rem;"><span class="status-dot"></span>ಲೈವ್</span>
+    </div>
+
+    <div class="auth-box">
+      <div class="auth-card">
+        <h3>ಪ್ರವೇಶ / LOGIN</h3>
+        <div class="form-group">
+          <label>ಪೂರ್ಣ ಹೆಸರು</label>
+          <input type="text" id="login-name" placeholder="ನಿಮ್ಮ ಹೆಸರು" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>ಜನ್ಮ ದಿನಾಂಕ (DOB)</label>
+          <input type="date" id="login-dob">
+        </div>
+        <button class="btn" onclick="handleLogin()">ಪ್ರವೇಶಿಸಿ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. CONTACTS & CALL LOGS SCREEN -->
+  <div id="screen-contacts" class="screen">
+    <div class="app-header">
+      <div>
+        <h2 id="my-profile-name">ನನ್ನ ಪ್ರೊಫೈಲ್</h2>
+        <span style="font-size:0.72rem; color:#ffe5b4;" id="my-profile-id">ID: ...</span>
+      </div>
+      <button onclick="logout()" style="background:none; border:none; color:#fff; font-size:0.8rem; text-decoration:underline;">ಲಾಗೌಟ್</button>
+    </div>
+
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-users-btn" onclick="switchTab('users')">ಕಾಂಟ್ಯಾಕ್ಟ್ ಪಟ್ಟಿ</button>
+      <button class="tab-btn" id="tab-calls-btn" onclick="switchTab('calls')">ನನ್ನ ಕಾಲ್ ಹಿಸ್ಟರಿ</button>
+    </div>
+
+    <!-- Users List -->
+    <div id="tab-users" class="list-container">
+      <div id="users-list">ಲೋಡ್ ಆಗುತ್ತಿದೆ...</div>
+    </div>
+
+    <!-- Call Logs List (Strictly filtered per user) -->
+    <div id="tab-calls" class="list-container" style="display:none;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <span style="font-size:0.8rem; font-weight:bold; color:#555;">ನನ್ನ ಕರೆಗಳ ವಿವರ</span>
+        <button onclick="clearMyCallLogs()" style="background:#555; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-size:0.72rem;">ಲಿಸ್ಟ್ ಅಳಿಸಿ</button>
+      </div>
+      <div id="calls-list">ಯಾವುದೇ ಕರೆಗಳಿಲ್ಲ.</div>
+    </div>
+  </div>
+
+  <!-- 3. PRIVATE CHAT SCREEN -->
+  <div id="screen-chat" class="screen">
+    <div class="chat-top-bar">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button onclick="closeChat()" style="background:none; border:none; color:#fff; font-size:1.2rem; cursor:pointer;">⬅</button>
+        <div class="chat-target-info">
+          <span class="name" id="chat-partner-name">ಹೆಸರು</span>
+          <span class="status" id="chat-partner-status">ಆಫ್‌ಲೈನ್</span>
+        </div>
+      </div>
+      <div class="call-actions">
+        <button class="action-icon-btn" onclick="startCall(false)">📞 ಆಡಿಯೋ</button>
+        <button class="action-icon-btn" onclick="startCall(true)">📹 ವೀಡಿಯೊ</button>
+        <button class="action-icon-btn" onclick="clearCurrentChat()" style="background:#440000;">🗑️</button>
+      </div>
+    </div>
+
+    <div class="chat-body" id="private-chat-box"></div>
+
+    <div class="chat-input-bar">
+      <input type="text" id="chat-input" placeholder="ಸಂದೇಶ ಬರೆಯಿರಿ..." autocomplete="off" onkeypress="if(event.key==='Enter') sendPrivateMessage()">
+      <button type="button" onclick="sendPrivateMessage()">ಕಳುಹಿಸಿ</button>
+    </div>
+  </div>
+
+  <!-- 4. VIDEO & AUDIO OVERLAY -->
+  <div id="video-overlay">
+    <div class="call-status-label" id="overlay-call-status">ಕರೆ ಸಂಪರ್ಕಿಸಲಾಗುತ್ತಿದೆ...</div>
+    <video id="remote-video" autoplay playsinline></video>
+    <video id="local-video" autoplay playsinline muted></video>
+    <div class="call-controls-overlay">
+      <button class="hangup-btn" onclick="endCall()">❌</button>
+    </div>
+  </div>
+
+  <!-- 5. INCOMING CALL MODAL -->
+  <div id="incoming-modal">
+    <h3 id="incoming-caller-title">ಒಳಬರುವ ಕರೆ</h3>
+    <p id="incoming-caller-sub" style="margin-top:8px; font-size:0.9rem; color:#ffcccc;">ಆಡಿಯೋ ಕರೆ...</p>
+    <div class="modal-actions">
+      <button class="circle-btn" style="background:#2e7d32;" onclick="acceptIncomingCall()">📞</button>
+      <button class="circle-btn" style="background:#d32f2f;" onclick="rejectIncomingCall()">❌</button>
+    </div>
+  </div>
+
+</div>
+
+<div id="proximity-blackout"></div>
+
+<!-- Audio Element for remote voice -->
+<audio id="remote-audio" autoplay playsinline></audio>
+
+<script>
+  function adjustViewport() {
+    if (window.visualViewport) {
+      document.getElementById('app-root').style.height = window.visualViewport.height + "px";
+    }
+  }
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', adjustViewport);
+
+  // --- AUDIO SYNTHESIZER FOR RINGTONE ---
+  let audioCtx = null;
+  let ringInterval = null;
+
+  function ensureAudioUnlocked() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    // Also unlock remote audio element
+    const ra = document.getElementById('remote-audio');
+    if (ra) {
+      ra.play().catch(()=>{});
+    }
+  }
+
+  function playOutgoingRingback() {
+    stopRinging();
+    ensureAudioUnlocked();
+    function beep() {
+      try {
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.frequency.setValueAtTime(425, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.2);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 1.2);
+      } catch(e){}
+    }
+    beep();
+    ringInterval = setInterval(beep, 3000);
+  }
+
+  function playIncomingRingtone() {
+    stopRinging();
+    ensureAudioUnlocked();
+    function ring() {
+      try {
+        if (!audioCtx) return;
+        [0, 0.4].forEach(offset => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.frequency.setValueAtTime(800, audioCtx.currentTime + offset);
+          gain.gain.setValueAtTime(0.35, audioCtx.currentTime + offset);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + offset + 0.35);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(audioCtx.currentTime + offset);
+          osc.stop(audioCtx.currentTime + offset + 0.35);
+        });
+      } catch(e){}
+    }
+    ring();
+    ringInterval = setInterval(ring, 2800);
+  }
+
+  function stopRinging() {
+    if (ringInterval) {
+      clearInterval(ringInterval);
+      ringInterval = null;
+    }
+  }
+
+  // --- PROXIMITY SCREEN-OFF ---
+  let proximitySensor = null;
+  function enableProximityDetection() {
+    if ('ProximitySensor' in window) {
+      try {
+        proximitySensor = new ProximitySensor();
+        proximitySensor.onreading = () => {
+          if (proximitySensor.distance < 4) {
+            document.getElementById('proximity-blackout').classList.add('blackout-on');
+          } else {
+            document.getElementById('proximity-blackout').classList.remove('blackout-on');
+          }
+        };
+        proximitySensor.start();
+      } catch (err) {}
+    }
+    if (!proximitySensor && 'AmbientLightSensor' in window) {
+      try {
+        const lightSensor = new AmbientLightSensor();
+        lightSensor.onreading = () => {
+          if (lightSensor.illuminance < 5) {
+            document.getElementById('proximity-blackout').classList.add('blackout-on');
+          } else {
+            document.getElementById('proximity-blackout').classList.remove('blackout-on');
+          }
+        };
+        lightSensor.start();
+      } catch (e) {}
+    }
+  }
+
+  function disableProximityDetection() {
+    document.getElementById('proximity-blackout').classList.remove('blackout-on');
+    if (proximitySensor) {
+      try { proximitySensor.stop(); } catch(e){}
+      proximitySensor = null;
+    }
+  }
+
+  // --- MQTT SIGNALING & PERSISTENT NETWORKING ---
+  const MQTT_BROKER = "broker.hivemq.com";
+  const MQTT_PORT = 8884;
+  const BASE_TOPIC = "court_p2p_portal_universal_v7/";
+
+  const clientId = "usr_" + Math.random().toString(16).substr(2, 8);
+  const client = new Paho.MQTT.Client(MQTT_BROKER, Number(MQTT_PORT), clientId);
+
+  let isConnected = false;
+  let currentUser = null;
+  let activeChatPartner = null;
+  let incomingCallData = null;
+
+  let registeredUsers = JSON.parse(localStorage.getItem('users_directory_db') || '{}');
+  let privateChats = JSON.parse(localStorage.getItem('private_chats_db') || '{}');
+  let callLogs = JSON.parse(localStorage.getItem('my_call_logs_db') || '[]');
+
+  // WebRTC ICE Servers (STUN + Multiple Public Open TURN Relays to bypass mobile firewalls)
+  let peerConnection = null;
+  let localStream = null;
+  let isVideoCall = false;
+  let callTimeoutTimer = null;
+  let queuedCandidates = [];
+
+  const rtcConfig = {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun2.l.google.com:19302" },
+      { urls: "stun:stun.relay.metered.ca:80" },
+      // Open-relay public turn
+      {
+        urls: "turn:openrelay.metered.ca:80",
+        username: "openrelayproject",
+        credential: "openrelayproject"
+      },
+      {
+        urls: "turn:openrelay.metered.ca:443",
+        username: "openrelayproject",
+        credential: "openrelayproject"
+      },
+      {
+        urls: "turn:openrelay.metered.ca:443?transport=tcp",
+        username: "openrelayproject",
+        credential: "openrelayproject"
+      }
+    ],
+    iceCandidatePoolSize: 10
+  };
+
+  client.onConnectionLost = () => { isConnected = false; setTimeout(connectNetwork, 3000); };
+  client.onMessageArrived = (message) => {
+    try {
+      handleIncomingNetwork(JSON.parse(message.payloadString));
+    } catch(e) {}
+  };
+
+  function connectNetwork() {
+    client.connect({
+      useSSL: true,
+      timeout: 10,
+      onSuccess: () => {
+        isConnected = true;
+        client.subscribe(BASE_TOPIC + "#");
+        if (currentUser) {
+          publishPersistentUser(currentUser);
+          publish("req_directory", { reqFrom: currentUser.id });
+        }
+      },
+      onFailure: () => setTimeout(connectNetwork, 4000)
+    });
+  }
+  connectNetwork();
+
+  function publish(subTopic, obj, retain = false) {
+    if (!isConnected) return;
+    const msg = new Paho.MQTT.Message(JSON.stringify(obj));
+    msg.destinationName = BASE_TOPIC + subTopic;
+    msg.retained = retain;
+    client.send(msg);
+  }
+
+  function publishPersistentUser(user) {
+    publish("directory/" + user.id, {
+      userId: user.id,
+      name: user.name,
+      dob: user.dob,
+      isOnline: true,
+      lastSeen: Date.now()
+    }, true);
+  }
+
+  setInterval(() => {
+    if (currentUser && isConnected) {
+      publish("presence", { userId: currentUser.id, isOnline: true });
+    }
+  }, 10000);
+
+  // --- NETWORK DATA HANDLER ---
+  function handleIncomingNetwork(data) {
+    if (data.userId && data.name) {
+      if (!currentUser || data.userId !== currentUser.id) {
+        registeredUsers[data.userId] = {
+          id: data.userId,
+          name: data.name,
+          dob: data.dob,
+          isOnline: data.isOnline !== undefined ? data.isOnline : false,
+          lastSeen: data.isOnline ? Date.now() : (registeredUsers[data.userId]?.lastSeen || 0)
+        };
+        localStorage.setItem('users_directory_db', JSON.stringify(registeredUsers));
+        renderUsersList();
+      }
+    }
+
+    if (data.userId && data.isOnline !== undefined) {
+      if (registeredUsers[data.userId]) {
+        registeredUsers[data.userId].isOnline = data.isOnline;
+        registeredUsers[data.userId].lastSeen = Date.now();
+        localStorage.setItem('users_directory_db', JSON.stringify(registeredUsers));
+        renderUsersList();
+        if (activeChatPartner && activeChatPartner.id === data.userId) {
+          document.getElementById('chat-partner-status').innerText = data.isOnline ? "ಆನ್‌ಲೈನ್" : "ಆಫ್‌ಲೈನ್";
+        }
+      }
+    }
+
+    if (data.reqFrom && currentUser && data.reqFrom !== currentUser.id) {
+      publishPersistentUser(currentUser);
+    }
+
+    // Direct Message Delivery
+    if (data.type === 'CHAT_MSG' && currentUser && data.to === currentUser.id) {
+      saveMessage(data.from, data.text, data.time);
+      if (activeChatPartner && activeChatPartner.id === data.from) {
+        renderChat();
+      }
+    }
+
+    // WebRTC Signaling
+    if (data.to === (currentUser ? currentUser.id : '')) {
+      if (data.type === 'CALL_OFFER') {
+        incomingCallData = data;
+        playIncomingRingtone();
+        document.getElementById('incoming-caller-title').innerText = `${data.fromName} ಅವರಿಂದ ಕರೆ ಬರುತ್ತಿದೆ...`;
+        document.getElementById('incoming-caller-sub').innerText = data.video ? "📹 ವೀಡಿಯೊ ಕರೆ" : "📞 ಆಡಿಯೋ ಕರೆ";
+        document.getElementById('incoming-modal').classList.add('active');
+      } else if (data.type === 'CALL_ANSWER') {
+        stopRinging();
+        clearTimeout(callTimeoutTimer);
+        if (peerConnection) {
+          peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer)).then(() => {
+            while (queuedCandidates.length) {
+              const c = queuedCandidates.shift();
+              peerConnection.addIceCandidate(c).catch(()=>{});
+            }
+          });
+        }
+      } else if (data.type === 'ICE_CANDIDATE') {
+        if (peerConnection && peerConnection.remoteDescription) {
+          peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(()=>{});
+        } else {
+          queuedCandidates.push(new RTCIceCandidate(data.candidate));
+        }
+      } else if (data.type === 'CALL_REJECTED' || data.type === 'CALL_HANGUP') {
+        stopRinging();
+        cleanupCallUI();
+        document.getElementById('incoming-modal').classList.remove('active');
+      } else if (data.type === 'MISSED_CALL_RECORD') {
+        // Record missed call only for the intended recipient
+        addMyCallLog(data.from, data.fromName, 'ಮಿಸ್ಡ್ ಕಾಲ್ (Missed)', data.timeStr, true);
+      }
+    }
+  }
+
+  // --- LOGIN ---
+  function handleLogin() {
+    ensureAudioUnlocked();
+    const name = document.getElementById('login-name').value.trim();
+    const dob = document.getElementById('login-dob').value;
+
+    if (!name || !dob) { alert("ಹೆಸರು ಮತ್ತು ಜನ್ಮ ದಿನಾಂಕ ಕಡ್ಡಾಯ."); return; }
+
+    const cleanStr = (name + dob).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    let hash = 0;
+    for (let i = 0; i < cleanStr.length; i++) {
+      hash = ((hash << 5) - hash) + cleanStr.charCodeAt(i);
+      hash |= 0;
+    }
+    const userNum = String(Math.abs(hash) % 10000).padStart(4, '0');
+    const myId = `CRT${userNum}`;
+
+    currentUser = { id: myId, name: name, dob: dob };
+
+    document.getElementById('my-profile-name').innerText = currentUser.name;
+    document.getElementById('my-profile-id').innerText = `ID: ${currentUser.id} | DOB: ${currentUser.dob}`;
+
+    publishPersistentUser(currentUser);
+    publish("req_directory", { reqFrom: currentUser.id });
+
+    renderUsersList();
+    renderMyCallLogs();
+    showScreen('screen-contacts');
+  }
+
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    adjustViewport();
+  }
+
+  function switchTab(tab) {
+    document.getElementById('tab-users-btn').classList.toggle('active', tab === 'users');
+    document.getElementById('tab-calls-btn').classList.toggle('active', tab === 'calls');
+    document.getElementById('tab-users').style.display = tab === 'users' ? 'block' : 'none';
+    document.getElementById('tab-calls').style.display = tab === 'calls' ? 'block' : 'none';
+    if (tab === 'calls') renderMyCallLogs();
+  }
+
+  function renderUsersList() {
+    const container = document.getElementById('users-list');
+    const keys = Object.keys(registeredUsers).filter(k => k !== (currentUser ? currentUser.id : ''));
+
+    if (keys.length === 0) {
+      container.innerHTML = `<p style="font-size:0.85rem; color:#888; text-align:center; padding:20px;">ಯಾವುದೇ ನೋಂದಾಯಿತ ಸಂಪರ್ಕಗಳಿಲ್ಲ.</p>`;
+      return;
+    }
+
+    container.innerHTML = keys.map(k => {
+      const u = registeredUsers[k];
+      const isOnline = u.isOnline && ((Date.now() - (u.lastSeen || 0)) < 25000);
+      return `
+        <div class="user-card" onclick="openChat('${u.id}', '${escapeHtml(u.name)}')">
+          <div class="user-info">
+            <h4>${escapeHtml(u.name)}</h4>
+            <small>ID: ${u.id} | DOB: ${u.dob}</small>
+          </div>
+          <div>
+            <span class="status-dot ${isOnline ? '' : 'offline'}"></span>
+            <small style="font-size:0.75rem; color:${isOnline ? 'green' : '#888'}; font-weight:bold;">
+              ${isOnline ? 'Online' : 'Offline'}
+            </small>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function openChat(partnerId, partnerName) {
+    const partner = registeredUsers[partnerId] || { id: partnerId, name: partnerName };
+    const isOnline = partner.isOnline && ((Date.now() - (partner.lastSeen || 0)) < 25000);
+
+    activeChatPartner = { id: partnerId, name: partnerName };
+    document.getElementById('chat-partner-name').innerText = partnerName;
+    document.getElementById('chat-partner-status').innerText = isOnline ? "ಆನ್‌ಲೈನ್" : "ಆಫ್‌ಲೈನ್";
+
+    renderChat();
+    showScreen('screen-chat');
+  }
+
+  function closeChat() {
+    activeChatPartner = null;
+    showScreen('screen-contacts');
+  }
+
+  function getChatKey(id1, id2) {
+    return [id1, id2].sort().join('_');
+  }
+
+  function sendPrivateMessage() {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (!text || !activeChatPartner || !currentUser) return;
+
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    saveMessage(currentUser.id, text, timeStr);
+
+    publish("chat", {
+      type: 'CHAT_MSG',
+      from: currentUser.id,
+      to: activeChatPartner.id,
+      text: text,
+      time: timeStr
+    });
+
+    input.value = '';
+    renderChat();
+    input.focus();
+  }
+
+  function saveMessage(senderId, text, timeStr) {
+    const otherId = senderId === currentUser.id ? activeChatPartner.id : senderId;
+    const key = getChatKey(currentUser.id, otherId);
+    if (!privateChats[key]) privateChats[key] = [];
+    privateChats[key].push({ from: senderId, text: text, time: timeStr });
+    localStorage.setItem('private_chats_db', JSON.stringify(privateChats));
+  }
+
+  function renderChat() {
+    const box = document.getElementById('private-chat-box');
+    box.innerHTML = '';
+    if (!activeChatPartner || !currentUser) return;
+
+    const key = getChatKey(currentUser.id, activeChatPartner.id);
+    const msgs = privateChats[key] || [];
+
+    msgs.forEach(m => {
+      const isMe = m.from === currentUser.id;
+      const div = document.createElement('div');
+      div.className = `msg ${isMe ? 'outgoing' : 'incoming'}`;
+      div.innerHTML = `<div>${escapeHtml(m.text)}</div><span class="time">${m.time}</span>`;
+      box.appendChild(div);
+    });
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function clearCurrentChat() {
+    if (!activeChatPartner) return;
+    if (confirm("ಈ ವ್ಯಕ್ತಿಯೊಂದಿಗಿನ ಎಲ್ಲಾ ಮೆಸೇಜ್‌ಗಳನ್ನು ಅಳಿಸಬೇಕೇ?")) {
+      const key = getChatKey(currentUser.id, activeChatPartner.id);
+      delete privateChats[key];
+      localStorage.setItem('private_chats_db', JSON.stringify(privateChats));
+      renderChat();
+    }
+  }
+
+  // --- WEBRTC CALLING ENGINE ---
+  async function startCall(videoMode) {
+    if (!activeChatPartner || !currentUser) return;
+    ensureAudioUnlocked();
+    isVideoCall = videoMode;
+    queuedCandidates = [];
+
+    const partner = registeredUsers[activeChatPartner.id];
+    const isOnline = partner && partner.isOnline && ((Date.now() - (partner.lastSeen || 0)) < 25000);
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (!isOnline) {
+      alert(`${activeChatPartner.name} ನೆಟ್ ಆಫ್‌ನಲ್ಲಿದ್ದಾರೆ. ಮಿಸ್ಡ್ ಕಾಲ್ ಕಳುಹಿಸಲಾಗಿದೆ.`);
+      addMyCallLog(activeChatPartner.id, activeChatPartner.name, 'ಹೊರಹೋಗುವ ಕರೆ (ಆಫ್‌ಲೈನ್)', nowTime, false);
+      publish("calls", {
+        type: 'MISSED_CALL_RECORD',
+        from: currentUser.id,
+        fromName: currentUser.name,
+        to: activeChatPartner.id,
+        timeStr: nowTime
+      });
+      return;
+    }
+
+    const ready = await initLocalMedia(videoMode);
+    if (!ready) return;
+
+    createPeerConnection(videoMode);
+    const offer = await peerConnection.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: videoMode
+    });
+    await peerConnection.setLocalDescription(offer);
+
+    publish("calls", {
+      type: 'CALL_OFFER',
+      offer: offer,
+      video: videoMode,
+      from: currentUser.id,
+      fromName: currentUser.name,
+      to: activeChatPartner.id,
+      timeStr: nowTime
+    });
+
+    document.getElementById('video-overlay').classList.add('active');
+    document.getElementById('overlay-call-status').innerText = `${activeChatPartner.name} ಅವರಿಗೆ ರಿಂಗಿಂಗ್ ಆಗುತ್ತಿದೆ...`;
+    
+    playOutgoingRingback();
+    addMyCallLog(activeChatPartner.id, activeChatPartner.name, videoMode ? 'ಹೊರಹೋಗುವ ವೀಡಿಯೊ ಕರೆ' : 'ಹೊರಹೋಗುವ ಆಡಿಯೋ ಕರೆ', nowTime, false);
+
+    if (!videoMode) enableProximityDetection();
+
+    callTimeoutTimer = setTimeout(() => {
+      stopRinging();
+      endCall();
+      publish("calls", {
+        type: 'MISSED_CALL_RECORD',
+        from: currentUser.id,
+        fromName: currentUser.name,
+        to: activeChatPartner.id,
+        timeStr: nowTime
+      });
+      alert("ಯಾರೂ ಕರೆ ಸ್ವೀಕರಿಸಲಿಲ್ಲ (ಮಿಸ್ಡ್ ಕಾಲ್ ದಾಖಲಾಗಿದೆ).");
+    }, 35000);
+  }
+
+  async function acceptIncomingCall() {
+    stopRinging();
+    ensureAudioUnlocked();
+    document.getElementById('incoming-modal').classList.remove('active');
+    if (!incomingCallData) return;
+
+    const data = incomingCallData;
+    isVideoCall = data.video;
+    queuedCandidates = [];
+
+    const ready = await initLocalMedia(data.video);
+    if (!ready) return;
+
+    createPeerConnection(data.video);
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+    
+    while (queuedCandidates.length) {
+      const c = queuedCandidates.shift();
+      await peerConnection.addIceCandidate(c).catch(()=>{});
+    }
+
+    const answer = await peerConnection.createAnswer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: data.video
+    });
+    await peerConnection.setLocalDescription(answer);
+
+    publish("calls", {
+      type: 'CALL_ANSWER',
+      answer: answer,
+      from: currentUser.id,
+      to: data.from
+    });
+
+    document.getElementById('video-overlay').classList.add('active');
+    document.getElementById('overlay-call-status').innerText = `ಕರೆ ಸಂಪರ್ಕದಲ್ಲಿದೆ 🟢 (${data.fromName})`;
+    addMyCallLog(data.from, data.fromName, data.video ? 'ಸ್ವೀಕರಿಸಿದ ವೀಡಿಯೊ ಕರೆ' : 'ಸ್ವೀಕರಿಸಿದ ಆಡಿಯೋ ಕರೆ', data.timeStr, false);
+
+    if (!data.video) enableProximityDetection();
+  }
+
+  function rejectIncomingCall() {
+    stopRinging();
+    document.getElementById('incoming-modal').classList.remove('active');
+    if (incomingCallData) {
+      publish("calls", {
+        type: 'CALL_REJECTED',
+        from: currentUser.id,
+        to: incomingCallData.from
+      });
+      addMyCallLog(incomingCallData.from, incomingCallData.fromName, 'ಮಿಸ್ಡ್ ಕಾಲ್ (ತಿರಸ್ಕರಿಸಲಾಗಿದೆ)', incomingCallData.timeStr, true);
+      incomingCallData = null;
+    }
+  }
+
+  async function initLocalMedia(videoMode) {
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        audio: { 
+          echoCancellation: true, 
+          noiseSuppression: true, 
+          autoGainControl: true
+        },
+        video: videoMode ? { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" } : false
+      });
+
+      if (videoMode) {
+        document.getElementById('local-video').srcObject = localStream;
+        document.getElementById('local-video').style.display = 'block';
+        document.getElementById('remote-video').style.display = 'block';
+      } else {
+        document.getElementById('local-video').style.display = 'none';
+        document.getElementById('remote-video').style.display = 'none';
+      }
+      return true;
+    } catch(err) {
+      alert("ಮೈಕ್ರೋಫೋನ್ / ಕ್ಯಾಮೆರಾ ಅನುಮತಿ ನೀಡಿಲ್ಲ: " + err.message);
+      return false;
+    }
+  }
+
+  function createPeerConnection(videoMode) {
+    peerConnection = new RTCPeerConnection(rtcConfig);
+
+    // Add local tracks to peer connection
+    localStream.getTracks().forEach(track => {
+      peerConnection.addTrack(track, localStream);
+    });
+
+    // Receive incoming tracks
+    peerConnection.ontrack = (event) => {
+      stopRinging();
+      clearTimeout(callTimeoutTimer);
+
+      const remoteAudio = document.getElementById('remote-audio');
+      const remoteVideo = document.getElementById('remote-video');
+
+      if (event.streams && event.streams[0]) {
+        if (videoMode) {
+          remoteVideo.srcObject = event.streams[0];
+          remoteVideo.play().catch(()=>{});
+        }
+        remoteAudio.srcObject = event.streams[0];
+        remoteAudio.play().catch(()=>{});
+      }
+
+      document.getElementById('overlay-call-status').innerText = "ಕರೆ ಸಂಪರ್ಕದಲ್ಲಿದೆ 🟢";
+    };
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        const targetId = activeChatPartner ? activeChatPartner.id : (incomingCallData ? incomingCallData.from : null);
+        if (targetId) {
+          publish("calls", {
+            type: 'ICE_CANDIDATE',
+            candidate: event.candidate,
+            from: currentUser.id,
+            to: targetId
+          });
+        }
+      }
+    };
+  }
+
+  function endCall() {
+    stopRinging();
+    clearTimeout(callTimeoutTimer);
+    disableProximityDetection();
+    const targetId = activeChatPartner ? activeChatPartner.id : (incomingCallData ? incomingCallData.from : null);
+    if (targetId) {
+      publish("calls", {
+        type: 'CALL_HANGUP',
+        from: currentUser.id,
+        to: targetId
+      });
+    }
+    cleanupCallUI();
+  }
+
+  function cleanupCallUI() {
+    stopRinging();
+    clearTimeout(callTimeoutTimer);
+    disableProximityDetection();
+    if (localStream) {
+      localStream.getTracks().forEach(t => t.stop());
+      localStream = null;
+    }
+    if (peerConnection) {
+      peerConnection.close();
+      peerConnection = null;
+    }
+    document.getElementById('video-overlay').classList.remove('active');
+  }
+
+  // --- STRICTLY INDIVIDUAL CALL LOGS (Only for logged-in user) ---
+  function addMyCallLog(otherUserId, otherUserName, typeStr, timeStr, isMissed) {
+    if (!currentUser) return;
+    callLogs.unshift({
+      ownerId: currentUser.id,
+      partnerId: otherUserId,
+      partnerName: otherUserName,
+      type: typeStr,
+      time: timeStr,
+      isMissed: isMissed,
+      date: new Date().toLocaleDateString()
+    });
+    localStorage.setItem('my_call_logs_db', JSON.stringify(callLogs));
+    renderMyCallLogs();
+  }
+
+  function renderMyCallLogs() {
+    const container = document.getElementById('calls-list');
+    if (!currentUser) return;
+
+    // Filter strictly calls related to CURRENT logged in user
+    const myLogs = callLogs.filter(c => c.ownerId === currentUser.id);
+
+    if (myLogs.length === 0) {
+      container.innerHTML = `<p style="font-size:0.85rem; color:#888; text-align:center; padding:15px;">ಯಾವುದೇ ಕರೆಗಳಿಲ್ಲ.</p>`;
+      return;
+    }
+
+    container.innerHTML = myLogs.map((c, index) => `
+      <div class="user-card" style="border-left-color:${c.isMissed ? '#d32f2f' : '#2e7d32'};">
+        <div class="user-info">
+          <h4 style="color:${c.isMissed ? '#d32f2f' : '#222'};">${escapeHtml(c.partnerName)}</h4>
+          <small>${c.type} • ${c.time} (${c.date})</small>
+        </div>
+        <button onclick="deleteMyCall(${index})" style="background:none; border:none; color:#999; font-size:1.1rem; cursor:pointer;">✕</button>
+      </div>
+    `).join('');
+  }
+
+  function deleteMyCall(index) {
+    if (!currentUser) return;
+    const myLogsIndices = [];
+    callLogs.forEach((c, i) => { if (c.ownerId === currentUser.id) myLogsIndices.push(i); });
+    const targetIdx = myLogsIndices[index];
+    if (targetIdx !== undefined) {
+      callLogs.splice(targetIdx, 1);
+      localStorage.setItem('my_call_logs_db', JSON.stringify(callLogs));
+      renderMyCallLogs();
+    }
+  }
+
+  function clearMyCallLogs() {
+    if (!currentUser) return;
+    if (confirm("ನಿಮ್ಮ ಎಲ್ಲಾ ಕಾಲ್ ಹಿಸ್ಟರಿ ಅಳಿಸಬೇಕೇ?")) {
+      callLogs = callLogs.filter(c => c.ownerId !== currentUser.id);
+      localStorage.setItem('my_call_logs_db', JSON.stringify(callLogs));
+      renderMyCallLogs();
+    }
+  }
+
+  function logout() {
+    stopRinging();
+    disableProximityDetection();
+    if (currentUser) {
+      publish("presence", { userId: currentUser.id, isOnline: false });
+    }
+    endCall();
+    currentUser = null;
+    activeChatPartner = null;
+    document.getElementById('login-name').value = '';
+    document.getElementById('login-dob').value = '';
+    showScreen('screen-login');
+  }
+
+  function escapeHtml(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+</script>
+
+</body>
+</html>
